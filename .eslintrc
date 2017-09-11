@@ -1,9 +1,11 @@
 {
-  "extends": ["airbnb", "plugin:flowtype/recommended"],
+  "extends": ["airbnb", "plugin:flowtype/recommended", "prettier"],
   "plugins": [
-    "flowtype"
+    "flowtype",
+    "prettier"
   ],
   "rules": {
+    "prettier/prettier": "error",
     "arrow-body-style": [0, "as-needed"],
     "camelcase": [0],
     "no-trailing-spaces": [0],
