@@ -24,7 +24,7 @@ export default ({ dependentBits, modifiedComponents = [], removedComponentIds, m
       : '');
 
   const paintUnRemovedComponents = () => {
-    if (!R.isEmpty(dependentBits)) {
+    if (!R.isEmpty(dependentBits) && !R.isNil(dependentBits)) {
       return Object.keys(dependentBits)
         .map((key) => {
           const header = chalk.underline.red(

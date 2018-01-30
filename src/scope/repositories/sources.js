@@ -295,18 +295,6 @@ export default class SourceRepository {
     });
     return component;
   }
-  /**
-   * removeVersion - remove specific component version from component
-   * @param {Component} component - component to remove version from
-   * @param {BitId} bitId - bitid with version to remove.
-   */
-  async removeVersion(component: Component, bitId: BitId): Promise<void> {
-    const objectRepo = this.objects();
-    const modifiedCompoent = await component.removeVersion(objectRepo, bitId.version);
-    objectRepo.add(modifiedCompoent);
-    await objectRepo.persist();
-    return modifiedCompoent;
-  }
 
   /**
    * clean - remove component or component version

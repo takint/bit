@@ -62,6 +62,7 @@ import componentResolver from '../component-resolver';
 import ComponentsList from '../consumer/component/components-list';
 import { RemovedObjects } from './component-remove';
 import Component from '../consumer/component/consumer-component';
+import { DependencyGraph } from './graph/graph';
 
 const removeNils = R.reject(R.isNil);
 const pathHasScope = pathHas([OBJECTS_DIR, BIT_HIDDEN_DIR]);
@@ -808,34 +809,23 @@ export default class Scope {
     return Promise.all(versionDependenciesArr.map(versionDependencies => versionDependencies.toConsumer(this.objects)));
   }
 
-  async removeComponent(id, componentList, removeRefs: boolean = false) {
+  async removeComponent(id: BitId, componentList, removeRefs: boolean = false, dependecyGraph: DependecyGraph) {
     const symlink = componentList.filter(
       component => component instanceof Symlink && component.id() === id.toStringWithoutScopeAndVersion()
     );
-    await this.sources.clean(id, removeRefs);
-    if (!R.isEmpty(symlink)) await this.objects.remove(symlink[0].hash());
-  }
-
-  /**
-   * Remove component dependecies
-   */
-  async removeComponentsDependences(
-    dependentBits,
-    componentList,
-    consumerComponentToRemove,
-    bitId,
-    removeSameOrigin: boolean = false
-  ): Promise<string> {
-    const removedComponents = consumerComponentToRemove.flattenedDependencies.map(async (id) => {
-      const arr = dependentBits[id.toStringWithoutVersion()];
-      const name = bitId.version === LATEST_BIT_VERSION ? bitId.toStringWithoutVersion() : bitId.toString();
-      const depArr = R.reject(num => num === name || BitId.parse(num).scope !== id.scope, arr);
-      if (R.isEmpty(depArr) && (id.scope !== bitId.scope || removeSameOrigin)) {
-        await this.removeComponent(id, componentList, true);
-        return id;
-      }
-    });
-    return (await Promise.all(removedComponents)).filter(x => !R.isNil(x));
+    if (id.version === LATEST_BIT_VERSION || dependecyGraph.getComponentVersions(id).length < 1) {
+      id.version = LATEST_BIT_VERSION;
+      await this.sources.clean(id, removeRefs);
+      if (!R.isEmpty(symlink)) await this.objects.remove(symlink[0].hash());
+    } else {
+      const x = dependecyGraph.getComponent(id);
+      const ref = x.versions[id.version];
+      delete x.versions[id.version];
+      await this.objects.removeMany([ref.hash]);
+      this.objects.add(x);
+      await this.objects.persist();
+    }
+    return this;
   }
 
   /**
@@ -843,29 +833,38 @@ export default class Scope {
    * @param {BitId} bitId - list of remote component ids to delete
    * @param {boolean} removeSameOrigin - remove component dependencies from same origin
    */
-  async removeSingle(bitId: BitId, removeSameOrigin: boolean = false): Promise<string> {
+  async removeSingle(
+    bitId: BitId,
+    dependecyGraph: DependecieGraph,
+    removeSameOrigin: boolean = false,
+    componentList
+  ): Promise<string> {
     logger.debug(`removing ${bitId.toString()}`);
-    const component = (await this.sources.get(bitId)).toComponentVersion();
-    const consumerComponentToRemove = await component.toConsumer(this.objects);
-    const componentList = await this.objects.listComponents();
-
-    const dependentBits = await this.findDependentBits(
-      consumerComponentToRemove.flattenedDependencies,
-      bitId.version !== LATEST_BIT_VERSION
+    let nodes;
+    if (bitId.version === LATEST_BIT_VERSION) {
+      nodes = dependecyGraph.getComponentVersions(bitId);
+    } else {
+      nodes = [dependecyGraph.getComponentVersion(bitId)];
+    }
+    const removedDep = await Promise.all(
+      nodes.map(async (node) => {
+        const componentDep = node.flattenedDependencies.filter(dep => dep.scope !== bitId.scope);
+        // check if one of the component dependencies that is not from the same scope is being used by another component
+        const dependentBits = await dependecyGraph.findDependentBitsByGraph(componentDep);
+        return await Promise.all(
+          componentDep.map(async (id) => {
+            if (!dependentBits[id.toString()]) {
+              await this.removeComponent(id, componentList, true, dependecyGraph);
+              return id;
+            }
+          })
+        );
+      })
     );
-
-    const removedDependencies = await this.removeComponentsDependences(
-      dependentBits,
-      componentList,
-      consumerComponentToRemove,
-      bitId,
-      removeSameOrigin
-    );
-
-    await this.removeComponent(bitId, componentList, false);
-    if (Object.keys(component.component.versions).length <= 1) bitId.version = LATEST_BIT_VERSION;
-
-    return { bitId, removedDependencies };
+    const flattenDep = R.flatten(removedDep).filter(x => x);
+    await this.removeComponent(bitId, componentList, false, dependecyGraph);
+    if (bitId.version === LATEST_BIT_VERSION && dependecyGraph.getComponentVersions(bitId).length <= 1) { bitId.version = LATEST_BIT_VERSION; }
+    return { bitId, removedDependencies: flattenDep };
   }
 
   async deprecateSingle(bitId: BitId): Promise<string> {
@@ -875,57 +874,15 @@ export default class Scope {
     await this.objects.persist();
     return bitId.toStringWithoutVersion();
   }
-  /**
-   * findDependentBits
-   * foreach component in array find the componnet that uses that component
-   */
-  async findDependentBits(bitIds: Array<BitId>, returnResultsWithVersion: boolean = false): Promise<Array<object>> {
-    const allComponents = await this.objects.listComponents(false);
-    const allComponentVersions = await Promise.all(
-      allComponents.map(async (component) => {
-        const loadedVersions = await Promise.all(
-          Object.keys(component.versions).map(async (version) => {
-            const componentVersion = await component.loadVersion(version, this.objects);
-            if (!componentVersion) return;
-            componentVersion.id = BitId.parse(component.id());
-            return componentVersion;
-          })
-        );
-        return loadedVersions.filter(x => x);
-      })
-    );
-    const allScopeComponents = R.flatten(allComponentVersions);
-    const dependentBits = {};
-    bitIds.forEach((bitId) => {
-      const dependencies = [];
-      allScopeComponents.forEach((scopeComponents) => {
-        scopeComponents.flattenedDependencies.forEach((flattenedDependence) => {
-          if (flattenedDependence.toStringWithoutVersion() === bitId.toStringWithoutVersion()) {
-            returnResultsWithVersion
-              ? dependencies.push(scopeComponents.id.toString())
-              : dependencies.push(scopeComponents.id.toStringWithoutVersion());
-          }
-        });
-      });
-
-      if (!R.isEmpty(dependencies)) dependentBits[bitId.toStringWithoutVersion()] = R.uniq(dependencies);
-    });
-    return Promise.resolve(dependentBits);
-  }
 
   /**
    * split bit array to found and missing components (incase user misspelled id)
    */
-  async filterFoundAndMissingComponents(bitIds: Array<BitId>) {
+  filterFoundAndMissingComponents(bitIds: Array<BitId>, dependecyGraph: DependecyGraph) {
     const missingComponents = [];
     const foundComponents = [];
-    const resultP = bitIds.map(async (id) => {
-      const component = await this.sources.get(id);
-      if (!component) missingComponents.push(id);
-      else foundComponents.push(id);
-    });
-    await Promise.all(resultP);
-    return Promise.resolve({ missingComponents, foundComponents });
+    bitIds.forEach(id => (dependecyGraph.getComponent(id) ? foundComponents.push(id) : missingComponents.push(id)));
+    return { missingComponents, foundComponents };
   }
 
   /**
@@ -934,11 +891,13 @@ export default class Scope {
    */
   async removeMany(bitIds: Array<BitId>, force: boolean, removeSameOrigin: boolean = false): Promise<any> {
     logger.debug(`removing ${bitIds} with force flag: ${force}`);
-    const { missingComponents, foundComponents } = await this.filterFoundAndMissingComponents(bitIds);
-    const dependentBits = await this.findDependentBits(foundComponents);
+    const componentList = await this.objects.listComponents();
+    const dependecyGraph = await new DependencyGraph().load(this.objects);
+    const { missingComponents, foundComponents } = this.filterFoundAndMissingComponents(bitIds, dependecyGraph);
+    const dependentBits = await dependecyGraph.findDependentBitsByGraph(foundComponents);
     if (R.isEmpty(dependentBits) || force) {
       const removedComponents = await Promise.all(
-        foundComponents.map(async bitId => this.removeSingle(bitId, removeSameOrigin))
+        foundComponents.map(async bitId => this.removeSingle(bitId, dependecyGraph, removeSameOrigin, componentList))
       );
       const ids = removedComponents.map(x => x.bitId);
       const removedDependencies = R.flatten(removedComponents.map(x => x.removedDependencies));

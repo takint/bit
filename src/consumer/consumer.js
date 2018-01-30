@@ -961,10 +961,7 @@ export default class Consumer {
    */
   async remove(ids: string[], force: boolean, track: boolean, deleteFiles: boolean) {
     // added this to remove support for remove version
-    const bitIds = ids.map(bitId => BitId.parse(bitId)).map((id) => {
-      id.version = LATEST_BIT_VERSION;
-      return id;
-    });
+    const bitIds = ids.map(bitId => BitId.parse(bitId));
     const [localIds, remoteIds] = partition(bitIds, id => id.isLocal());
     const localResult = await this.removeLocal(localIds, force, track, deleteFiles);
     const remoteResult = !R.isEmpty(remoteIds) ? await this.removeRemote(remoteIds, force) : [];
@@ -1029,7 +1026,6 @@ export default class Consumer {
         (component.origin === COMPONENT_ORIGINS.IMPORTED || component.origin === COMPONENT_ORIGINS.NESTED)
       ) {
         const realId = BitId.parse(realName);
-        realId.version = LATEST_BIT_VERSION;
         return realId;
       }
       if (component) return BitId.parse(realName);
@@ -1059,7 +1055,8 @@ export default class Consumer {
   async removeLocal(bitIds: BitIds, force: boolean, track: boolean, deleteFiles: boolean) {
     // local remove in case user wants to delete commited components
     const modifiedComponents = [];
-    const regularComponents = [];
+    const componentToRemove = [];
+    if (R.isEmpty(bitIds)) return new RemovedLocalObjects({});
     const resolvedIDs = this.resolveLocalComponentIds(bitIds);
     if (R.isEmpty(resolvedIDs)) return new RemovedLocalObjects({});
     if (!force) {
@@ -1067,17 +1064,19 @@ export default class Consumer {
         resolvedIDs.map(async (id) => {
           const componentStatus = await this.getComponentStatusById(id);
           if (componentStatus.modified) modifiedComponents.push(id);
-          else regularComponents.push(id);
+          else componentToRemove.push(id);
         })
       );
     }
+
     const { removedComponentIds, missingComponents, dependentBits, removedDependencies } = await this.scope.removeMany(
-      force ? resolvedIDs : regularComponents,
+      !force ? componentToRemove : resolvedIDs,
       force,
       true
     );
 
-    const componensToRemoveFromFs = removedComponentIds.filter(id => id.version === LATEST_BIT_VERSION);
+    const componensToRemoveFromFs = removedComponentIds;
+
     if (!R.isEmpty(removedComponentIds)) {
       await this.removeComponentFromFs(componensToRemoveFromFs, deleteFiles);
       await this.removeComponentFromFs(removedDependencies, false);
@@ -1089,7 +1088,7 @@ export default class Consumer {
         this.bitMap,
         componensToRemoveFromFs
       );
-      await this.cleanBitMapAndBitJson(componensToRemoveFromFs, removedDependencies);
+      await this.cleanBitMapAndBitJson(removedComponentIds, removedDependencies);
     }
     return new RemovedLocalObjects({
       removedComponentIds,
