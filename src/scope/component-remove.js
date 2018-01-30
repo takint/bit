@@ -32,14 +32,8 @@ export class RemovedObjects {
 }
 export class RemovedLocalObjects extends RemovedObjects {
   modifiedComponents: BitIds;
-  constructor(
-    bitIds: BitIds,
-    missingComponents: BitIds,
-    modifiedComponents: BitIds = [],
-    dependentBits: Object,
-    removedDependencies: BitIds
-  ) {
-    super(bitIds, missingComponents, removedDependencies, dependentBits);
+  constructor({ removedComponentIds, missingComponents, modifiedComponents, dependentBits, removedDependencies }) {
+    super({ removedComponentIds, missingComponents, removedDependencies, dependentBits });
     this.modifiedComponents = modifiedComponents;
   }
 }

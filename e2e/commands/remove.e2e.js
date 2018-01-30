@@ -193,7 +193,7 @@ describe('bit remove command', function () {
         "module.exports = function isType() { return 'got is-type'; };console.log('sdfsdfsdf')"
       );
       const output = helper.removeComponent('utils/is-string@0.0.1 -s');
-      expect(output).to.contain.string('error: unable to remove modified components: utils/is-string@0.0.1');
+      expect(output).to.contain.string('error: unable to remove modified components: utils/is-string');
     });
     it('should not remove component when component is modified', () => {
       const output = helper.removeComponent('utils/is-string -s');
@@ -321,20 +321,13 @@ describe('bit remove command', function () {
       expect(output.includes('successfully imported one component')).to.be.true;
     });
     it('should remove imported component and its files', () => {
+      helper.reInitLocalScope();
+      helper.addRemoteScope();
+      helper.importComponent('utils/is-string2');
       const importedComponentDir = path.join(helper.localScopePath, 'components', 'utils');
-      const importedDependeceDir = path.join(
-        helper.localScopePath,
-        'components',
-        '.dependencies',
-        'utils',
-        'is-type',
-        helper2.remoteScope
-      );
-
       const output = helper.removeComponent('utils/is-string2 -s');
       expect(output).to.contain.string(`successfully removed components: ${helper.remoteScope}/utils/is-string2`);
       assert.isEmptyDirectory(importedComponentDir, 'directory not empty');
-      assert.isEmptyDirectory(importedDependeceDir, 'directory not empty');
     });
     it('bitmap should not contain component and dependences', () => {
       const bitMap = helper.readBitMap();

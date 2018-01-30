@@ -12,11 +12,22 @@ const Graph = GraphLib.Graph;
 export class DependencyGraph {
   graph: Graph;
 
+  /**
+   * load - build scope dependecy graph (in the future maybe we will load from file)
+   * @param {Repository} repo - list of remote component ids to delete
+   * @returns - DependencyGraph
+   */
   async load(repo: Repository) {
-    this.graph = await this.buildDependencieGraph(repo);
+    this.graph = await this.buildDependencyGraph(repo);
     return this;
   }
-  async buildDependencieGraph(repo: Repository): Graph {
+
+  /**
+   * buildDependencyGraph - build scope dependecy graph
+   * @param {Repository} repo - list of remote component ids to delete
+   * @returns - Graph
+   */
+  async buildDependencyGraph(repo: Repository): Graph {
     const graph = new Graph({ compound: true });
     const depObj = {};
     const allComponents = await repo.listComponents(false);
@@ -41,10 +52,20 @@ export class DependencyGraph {
     return Promise.resolve(graph);
   }
 
+  /**
+   * getComponent - get component from graph
+   * @param {BitId} id - list of remote component ids to delete
+   * @returns - Component
+   */
   getComponent(id: BitId): Component {
     return this.graph.node(id.toStringWithoutVersion());
   }
 
+  /**
+   * getComponentVersion - get component version from graph (if no version supplied the latest will be fetched)
+   * @param {BitId} id - list of remote component ids to delete
+   * @returns - Version
+   */
   getComponentVersion(id: BitId): Version {
     if (id.version === LATEST_BIT_VERSION) {
       const component = this.getComponent();
@@ -55,6 +76,11 @@ export class DependencyGraph {
     return this.graph.node(id.toString());
   }
 
+  /**
+   * getComponentVersions -get all versions of a component
+   * @param {BitId} id - list of remote component ids to delete
+   * @returns - Version[]
+   */
   getComponentVersions(id: BitId): Version[] {
     const component = this.getComponent(id);
     if (!component) return;
@@ -68,8 +94,7 @@ export class DependencyGraph {
    * foreach component in array find the componnet that uses that component
    * dont return local components
    */
-
-  async findDependentBitsByGraph(bitIds: BitIds): Promise<Array<object>> {
+  async findDependentBitsByGraph(bitIds: BitIds): Array<object> {
     const dependentIds = {};
     bitIds.forEach((id) => {
       if (id.version === LATEST_BIT_VERSION) {
@@ -78,7 +103,9 @@ export class DependencyGraph {
         children.forEach((child) => {
           const requiredBy = this.graph.predecessors(child);
           if (requiredBy && !R.isEmpty(requiredBy)) {
-            if (dependentIds[id.toStringWithoutVersion()]) { dependentIds[id.toStringWithoutVersion()] = dependentIds[id.toStringWithoutVersion()].concat(requiredBy); } else dependentIds[id.toStringWithoutVersion()] = requiredBy;
+            if (dependentIds[id.toStringWithoutVersion()]) {
+              dependentIds[id.toStringWithoutVersion()] = dependentIds[id.toStringWithoutVersion()].concat(requiredBy);
+            } else dependentIds[id.toStringWithoutVersion()] = requiredBy;
           }
         });
       } else {

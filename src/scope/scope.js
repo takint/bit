@@ -863,7 +863,9 @@ export default class Scope {
     );
     const flattenDep = R.flatten(removedDep).filter(x => x);
     await this.removeComponent(bitId, componentList, false, dependecyGraph);
-    if (bitId.version === LATEST_BIT_VERSION && dependecyGraph.getComponentVersions(bitId).length <= 1) { bitId.version = LATEST_BIT_VERSION; }
+    if (bitId.version === LATEST_BIT_VERSION && dependecyGraph.getComponentVersions(bitId).length <= 1) {
+      bitId.version = LATEST_BIT_VERSION;
+    }
     return { bitId, removedDependencies: flattenDep };
   }
 
@@ -881,7 +883,7 @@ export default class Scope {
   filterFoundAndMissingComponents(bitIds: Array<BitId>, dependecyGraph: DependecyGraph) {
     const missingComponents = [];
     const foundComponents = [];
-    bitIds.forEach(id => (dependecyGraph.getComponent(id) ? foundComponents.push(id) : missingComponents.push(id)));
+    bitIds.forEach(id => (dependecyGraph.searchComponent(id) ? foundComponents.push(id) : missingComponents.push(id)));
     return { missingComponents, foundComponents };
   }
 

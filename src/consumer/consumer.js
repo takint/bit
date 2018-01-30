@@ -1028,7 +1028,7 @@ export default class Consumer {
         const realId = BitId.parse(realName);
         return realId;
       }
-      if (component) return BitId.parse(realName);
+      // if (component) return BitId.parse(realName);
       return id;
     });
   }
@@ -1056,6 +1056,7 @@ export default class Consumer {
     // local remove in case user wants to delete commited components
     const modifiedComponents = [];
     const componentToRemove = [];
+    const staged = [];
     if (R.isEmpty(bitIds)) return new RemovedLocalObjects({});
     const resolvedIDs = this.resolveLocalComponentIds(bitIds);
     if (R.isEmpty(resolvedIDs)) return new RemovedLocalObjects({});
