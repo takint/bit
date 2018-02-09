@@ -65,6 +65,7 @@ import ComponentsList from '../consumer/component/components-list';
 import { RemovedObjects } from './component-remove';
 import Component from '../consumer/component/consumer-component';
 import DependencyGraph from './graph/graph';
+import VisualDependencyGraph from './graph/vizgraph';
 
 const removeNils = R.reject(R.isNil);
 const pathHasScope = pathHas([OBJECTS_DIR, BIT_HIDDEN_DIR, pathLib.join(DOT_GIT_DIR, BIT_GIT_DIR)]);
@@ -131,6 +132,10 @@ export default class Scope {
 
   getComponentsPath(): string {
     return pathLib.join(this.path, Scope.getComponentsRelativePath());
+  }
+
+  get visualDependencyGraph(): VisualDependencyGraph {
+    return VisualDependencyGraph.load(this.objects);
   }
 
   /**

@@ -38,6 +38,7 @@ import Untag from './commands/public-cmds/untag-cmd';
 import Move from './commands/public-cmds/move-cmd';
 import Remove from './commands/public-cmds/remove-cmd';
 import Deprecate from './commands/public-cmds/deprecate-cmd';
+import Graph from './commands/public-cmds/graph-cmd';
 import DeprecatePrivate from './commands/private-cmds/_deprecate-cmd';
 import Delete from './commands/private-cmds/_delete-cmd';
 import Latest from './commands/private-cmds/_latest-cmd';
@@ -86,6 +87,7 @@ export default function registerCommands(extensionsCommands): CommandRegistrar {
       new Move(),
       new Remove(),
       new Deprecate(),
+      new Graph(),
       new Delete(),
       new DeprecatePrivate(),
       new Latest(),
