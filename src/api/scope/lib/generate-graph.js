@@ -5,5 +5,6 @@ export default (async function generateGraph(path: string, options: Object): Pro
   const scope = await loadScope(path);
   const visualDependencyGraph = await scope.visualDependencyGraph;
   const { image } = options;
-  return await visualDependencyGraph.image(image);
+  const result = await visualDependencyGraph.image(image);
+  return result;
 });
