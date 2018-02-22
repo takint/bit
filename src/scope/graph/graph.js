@@ -48,9 +48,12 @@ export default class DependencyGraph {
     // set all edges
     // @todo: currently the label is "require". Change it to be "direct" and "indirect" depends on whether it comes from
     // flattenedDependencies or from dependencies.
-    Object.keys(depObj).forEach(id =>
-      depObj[id].flattenedDependencies.forEach(dep => graph.setEdge(id, dep.toString(), 'require'))
-    );
+    Object.keys(depObj).forEach((id) => {
+      const regularDeps = depObj[id].dependencies.toStringOfIds();
+      regularDeps.forEach(dep => graph.setEdge(id, dep, 'regular'));
+      const devDeps = depObj[id].devDependencies.toStringOfIds();
+      devDeps.forEach(dep => graph.setEdge(id, dep, 'dev'));
+    });
     return Promise.resolve(graph);
   }
 
@@ -90,7 +93,7 @@ export default class DependencyGraph {
 
   /**
    * findDependentBits
-   * foreach component in array find the componnet that uses that component
+   * foreach component in array find the component that uses that component
    * dont return local components
    */
 

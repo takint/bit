@@ -131,8 +131,9 @@ export default class Scope {
     return pathLib.join(this.path, Scope.getComponentsRelativePath());
   }
 
-  get visualDependencyGraph(): VisualDependencyGraph {
-    return VisualDependencyGraph.load(this.objects);
+  async getVisualDependencyGraph(): VisualDependencyGraph {
+    const graph = await this.getDependencyGraph();
+    return VisualDependencyGraph.loadFromGraphlib(graph.graph);
   }
 
   /**

@@ -3,54 +3,53 @@ import path from 'path';
 import fs from 'fs-extra';
 import execa from 'execa';
 import graphviz from 'graphviz';
-import { Repository } from '../objects';
-// import { BitId, BitIds } from '../../bit-id';
-import { Component, Version } from '../models';
-import { VERSION_DELIMITER } from '../../constants';
+import GraphLib from 'graphlib';
 import logger from '../../logger/logger';
 
+const Graph = GraphLib.Graph;
+const Digraph = graphviz.digraph;
+
 type ConfigProps = {
-  layout: ?string, // dot Layout to use in the graph
-  fontName: ?string, // Arial font name to use in the graph
-  fontSize: ?string, // 14px	Font size to use in the graph
-  backgroundColor: ?string, // #000000	Background color for the graph
-  nodeColor: ?string, // #c6c5fe	Default node color to use in the graph
-  noDependencyColor: ?string, // #cfffac	Color to use for nodes with no dependencies
-  edgeColor: ?string, // #757575	Edge color to use in the graph
-  graphVizOptions: ?Object, // false	Custom GraphViz options
-  graphVizPath: ?string // null Custom GraphViz path
+  layout?: string, // dot Layout to use in the graph
+  fontName?: string, // Arial font name to use in the graph
+  fontSize?: string, // 14px Font size to use in the graph
+  backgroundColor?: string, // #000000 Background color for the graph
+  nodeColor?: string, // #c6c5fe Default node color to use in the graph
+  noDependencyColor?: string, // #cfffac Color to use for nodes with no dependencies
+  edgeColor?: string, // #757575 Edge color to use in the graph
+  graphVizOptions?: Object, // null Custom GraphViz options
+  graphVizPath?: string // null Custom GraphViz path
 };
 
-const defaultConfig = {
+const defaultConfig: ConfigProps = {
   layout: 'dot',
   fontName: 'Arial',
   fontSize: '14px',
   backgroundColor: '#000000',
   nodeColor: '#c6c5fe',
   noDependencyColor: '#cfffac',
-  edgeColor: '#757575',
-  graphVizOptions: null,
-  graphVizPath: null
+  devDependencyColor: '#ff0000',
+  edgeColor: '#757575'
 };
 
 export default class VisualDependencyGraph {
-  repository: Repository;
-  graph: Any;
+  graphlib: Graph;
+  graph: Digraph;
   config: ConfigProps;
   rawOptions: Object;
 
-  constructor(repository: Repository, graph: Any, config: ConfigProps, rawOptions: Object) {
-    this.repository = repository;
+  constructor(graphlib: Graph, graph: Digraph, config: ConfigProps, rawOptions: Object) {
     this.graph = graph;
+    this.graphlib = graphlib;
     this.config = config;
     this.rawOptions = rawOptions;
   }
 
-  static async load(repository: Repository, config: ConfigProps = {}, rawOptions: Object) {
+  static async loadFromGraphlib(graphlib: Graph, config: ConfigProps = {}, rawOptions: Object = {}) {
     const concreteConfig = Object.assign({}, defaultConfig, config);
     checkGraphvizInstalled(config.graphVizPath);
-    const graph = await VisualDependencyGraph.buildDependenciesGraph(repository, concreteConfig);
-    return new VisualDependencyGraph(repository, graph, concreteConfig, rawOptions);
+    const graph: Digraph = VisualDependencyGraph.buildDependenciesGraph(graphlib, concreteConfig);
+    return new VisualDependencyGraph(graphlib, graph, concreteConfig, rawOptions);
   }
 
   /**
@@ -60,48 +59,34 @@ export default class VisualDependencyGraph {
    * @param  {Object} config
    * @return {Promise}
    */
-  static async buildDependenciesGraph(repository, config): Any {
+  static buildDependenciesGraph(graphlib, config): Digraph {
     const graph = graphviz.digraph('G');
-    const nodes = {};
 
     if (config.graphVizPath) {
       graph.setGraphVizPath(config.graphVizPath);
     }
 
-    const depObj: { [id: string]: Version } = {};
-    const allComponents: Component[] = await repository.listComponents(false);
-    // build all nodes. a node is either a Version object or Component object.
-    // each Version node has a parent of Component node. Component node doesn't have a parent.
-    await Promise.all(
-      allComponents.map(async (component) => {
-        // graph.addNode(component.id(), component);
-        await Promise.all(
-          Object.keys(component.versions).map(async (version) => {
-            const componentVersion = await component.loadVersion(version, repository);
-            if (!componentVersion) return;
-            const nodeId = `${component.id()}${VERSION_DELIMITER}${version}`;
-            // nodes[nodeId] = nodes[nodeId] || graph.addNode(nodeId, componentVersion);
-            nodes[nodeId] = nodes[nodeId] || graph.addNode(nodeId);
-            if (componentVersion.dependencies.isEmpty()) {
-              setNodeColor(nodes[nodeId], config.noDependencyColor);
-            }
-            // graph.setNode(`${component.id()}@${version}`, componentVersion);
-            // graph.setParent(`${component.id()}@${version}`, component.id());
-            componentVersion.id = component.toBitId();
-            depObj[nodeId] = componentVersion;
-          })
-        );
-      })
-    );
-    // set all edges
-    // @todo: currently the label is "require". Change it to be "direct" and "indirect" depends on whether it comes from
-    // flattenedDependencies or from dependencies.
-    Object.keys(depObj).forEach((id) => {
-      // TODO: add dev deps (with different edge color)
-      const deps = depObj[id].dependencies.toStringOfIds();
-      deps.forEach(dep => graph.addEdge(id, dep));
+    const nodes = graphlib.nodes();
+    const edges = graphlib.edges();
+
+    nodes.forEach((node) => {
+      // Only apply on lower level of nodes
+      if (graphlib.children(node).length === 0) {
+        const vizNode = graph.addNode(node);
+        if (graphlib.outEdges(node).length === 0) {
+          setNodeColor(vizNode, config.noDependencyColor);
+        }
+      }
     });
-    return Promise.resolve(graph);
+    edges.forEach((edge) => {
+      const edgeType = graphlib.edge(edge);
+      const vizEdge = graph.addEdge(edge.v, edge.w);
+      if (edgeType === 'dev') {
+        setEdgeColor(vizEdge, config.devDependencyColor);
+      }
+    });
+
+    return graph;
   }
 
   /**
@@ -109,12 +94,13 @@ export default class VisualDependencyGraph {
    * @param  {String} imagePath
    * @return {Promise}
    */
-  async image(imagePath: string): string {
+  async image(imagePath: string): Promise<string> {
     // console.log('imagePath', imagePath)
-    const options = createGraphvizOptions(this.config);
-    options.type = path.extname(imagePath).replace('.', '') || 'png';
+    const options: Object = createGraphvizOptions(this.config);
+    const type: string = path.extname(imagePath).replace('.', '') || 'png';
+    options.type = type;
 
-    const outputP: Promise = new Promise((resolve, reject) => {
+    const outputP: Promise<Buffer> = new Promise((resolve, reject) => {
       this.graph.output(options, resolve, (code, out, err) => {
         logger.debug('Error during viz graph output function');
         logger.debug(code, out, err);
@@ -147,12 +133,21 @@ function setNodeColor(node, color) {
 }
 
 /**
+ * Set color on an edge.
+ * @param  {Object} edge
+ * @param  {String} color
+ */
+function setEdgeColor(edge, color) {
+  edge.set('color', color);
+}
+
+/**
  * Check if Graphviz is installed on the system.
  * @param  {Object} config
  * @return {Promise}
  */
-function checkGraphvizInstalled(graphVizPath) {
-  const options = {
+function checkGraphvizInstalled(graphVizPath?: string) {
+  const options: Object = {
     shell: true
   };
   if (graphVizPath) {
