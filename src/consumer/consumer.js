@@ -30,7 +30,7 @@ import migrate from './migrations/consumer-migrator';
 import type { ConsumerMigrationResult } from './migrations/consumer-migrator';
 import enrichContextFromGlobal from '../hooks/utils/enrich-context-from-global';
 import loader from '../cli/loader';
-import { BEFORE_INSTALL_NPM_DEPENDENCIES, BEFORE_MIGRATION } from '../cli/loader/loader-messages';
+import { BEFORE_MIGRATION } from '../cli/loader/loader-messages';
 import BitMap from './bit-map/bit-map';
 import { MissingBitMapComponent } from './bit-map/exceptions';
 import logger from '../logger/logger';
@@ -40,10 +40,10 @@ import loadDependenciesForComponent from './component/dependencies-resolver';
 import { Version, Component as ModelComponent } from '../scope/models';
 import MissingFilesFromComponent from './component/exceptions/missing-files-from-component';
 import ComponentNotFoundInPath from './component/exceptions/component-not-found-in-path';
-import npmClient from '../npm-client';
+import { installPackages, installNpmPackagesForComponents } from '../npm-client/install-packages';
 import GitHooksManager from '../git-hooks/git-hooks-manager';
-import { RemovedLocalObjects } from '../scope/component-remove';
-import { linkComponents, linkAllToNodeModules, linkComponentsToNodeModules } from '../links';
+import { RemovedLocalObjects } from '../scope/removed-components';
+import { linkComponents, linkComponentsToNodeModules } from '../links';
 import * as packageJson from './component/package-json';
 import Remotes from '../remotes/remotes';
 import { Dependencies } from './component/dependencies';
@@ -68,7 +68,8 @@ type ComponentStatus = {
   newlyCreated: boolean,
   deleted: boolean,
   staged: boolean,
-  notExist: boolean
+  notExist: boolean,
+  nested: boolean // when a component is nested, it doesn't matter whether it was modified
 };
 
 export default class Consumer {
@@ -84,6 +85,7 @@ export default class Consumer {
   _dirStructure: DirStructure;
   _componentsCache: Object = {}; // cache loaded components
   _componentsStatusCache: Object = {}; // cache loaded components
+  packageManagerArgs: string[] = []; // args entered by the user in the command line after '--'
 
   constructor({
     projectPath,
@@ -147,8 +149,8 @@ export default class Consumer {
       msg = msg
         ? format(msg, err)
         : `Warning: Bit is not able to run the link command. Please install bit-${
-            err.lang
-          } driver and run the link command.`;
+          err.lang
+        } driver and run the link command.`;
       if (err instanceof DriverNotFound) {
         console.log(chalk.yellow(msg)); // eslint-disable-line
       }
@@ -225,7 +227,7 @@ export default class Consumer {
     const alreadyLoadedComponents = [];
     const idsToProcess = [];
     const deletedComponents = [];
-    ids.forEach(id => {
+    ids.forEach((id) => {
       if (this._componentsCache[id.toString()]) {
         logger.debug(`the component ${id.toString()} has been already loaded, use the cached component`);
         alreadyLoadedComponents.push(this._componentsCache[id.toString()]);
@@ -240,7 +242,7 @@ export default class Consumer {
     );
 
     const components = idsToProcess.map(async (id: BitId) => {
-      const idWithConcreteVersionString = getLatestVersionNumber(
+      const idWithConcreteVersionString: string = getLatestVersionNumber(
         Object.keys(this.bitMap.getAllComponents()),
         id.toString()
       );
@@ -251,7 +253,10 @@ export default class Consumer {
       if (componentMap.rootDir) {
         bitDir = path.join(bitDir, componentMap.rootDir);
       }
-      const componentFromModel = await this.scope.getFromLocalIfExist(idWithConcreteVersion);
+      const componentWithDependenciesFromModel = await this.scope.getFromLocalIfExist(idWithConcreteVersion);
+      const componentFromModel = componentWithDependenciesFromModel
+        ? componentWithDependenciesFromModel.component
+        : undefined;
       let component;
       try {
         component = await Component.loadFromFileSystem({
@@ -271,20 +276,16 @@ export default class Consumer {
         }
         throw err;
       }
+      component.loadedFromFileSystem = true;
       component.originallySharedDir = componentMap.originallySharedDir || null;
+      component.componentMap = componentMap;
+      component.componentFromModel = componentFromModel;
 
       if (!driverExists || componentMap.origin === COMPONENT_ORIGINS.NESTED) {
         // no need to resolve dependencies
         return component;
       }
-      return loadDependenciesForComponent(
-        component,
-        componentMap,
-        bitDir,
-        this,
-        idWithConcreteVersionString,
-        componentFromModel
-      );
+      return loadDependenciesForComponent(component, bitDir, this, idWithConcreteVersionString);
     });
 
     const allComponents = [];
@@ -320,7 +321,7 @@ export default class Consumer {
     const componentDir = path.join(componentsDir, id.box, id.name, id.scope, currentVersionOnly ? id.version : '');
 
     return new Promise((resolve, reject) => {
-      return fs.remove(componentDir, err => {
+      return fs.remove(componentDir, (err) => {
         if (err) return reject(err);
         return resolve();
       });
@@ -385,7 +386,7 @@ export default class Consumer {
       }
       // don't write dists files for authored components as the author has its own mechanism to generate them
       // also, don't write dists file for imported component, unless the user used '--dist' flag
-      componentWithDeps.component._writeDistsFiles = writeDists && origin === COMPONENT_ORIGINS.IMPORTED;
+      componentWithDeps.component.dists.writeDistsFiles = writeDists && origin === COMPONENT_ORIGINS.IMPORTED;
       return componentWithDeps.component.write({
         bitDir,
         force,
@@ -449,7 +450,7 @@ export default class Consumer {
     const writtenDependenciesIncludesNull = await Promise.all(allDependenciesP);
     const writtenDependencies = writtenDependenciesIncludesNull.filter(dep => dep);
     if (writeToPath) {
-      componentsWithDependencies.forEach(componentWithDeps => {
+      componentsWithDependencies.forEach((componentWithDeps) => {
         const relativeWrittenPath = this.getPathRelativeToConsumer(componentWithDeps.component.writtenPath);
         if (relativeWrittenPath && path.resolve(relativeWrittenPath) !== path.resolve(writeToPath)) {
           const component = componentWithDeps.component;
@@ -468,18 +469,25 @@ export default class Consumer {
     );
 
     await this.bitMap.write();
-    if (installNpmPackages) await this.installNpmPackagesForComponents(componentsWithDependencies, verbose);
+    if (installNpmPackages) await installNpmPackagesForComponents(this, componentsWithDependencies, verbose);
     if (addToRootPackageJson) await packageJson.addComponentsToRoot(this, writtenComponents.map(c => c.id));
 
-    return linkComponents(componentsWithDependencies, writtenComponents, writtenDependencies, this, createNpmLinkFiles);
+    return linkComponents(
+      componentsWithDependencies,
+      writtenComponents,
+      writtenDependencies,
+      this,
+      createNpmLinkFiles,
+      writePackageJson
+    );
   }
 
   moveExistingComponent(component: Component, oldPath: string, newPath: string) {
     if (fs.existsSync(newPath)) {
       throw new Error(
-        `could not move the component ${
-          component.id
-        } from ${oldPath} to ${newPath} as the destination path already exists`
+        `could not move the component ${component.id} from ${oldPath} to ${
+          newPath
+        } as the destination path already exists`
       );
     }
     const componentMap = this.bitMap.getComponent(component.id);
@@ -544,7 +552,7 @@ export default class Consumer {
       const copyDependenciesVersionsFromModelToFS = (dev = false) => {
         const dependenciesFS = dev ? version.devDependencies : version.dependencies;
         const dependenciesModel = dev ? componentFromModel.devDependencies : componentFromModel.dependencies;
-        dependenciesFS.get().forEach(dependency => {
+        dependenciesFS.get().forEach((dependency) => {
           const idWithoutVersion = dependency.id.toStringWithoutVersion();
           const dependencyFromModel = dependenciesModel
             .get()
@@ -560,10 +568,10 @@ export default class Consumer {
       /*
        sort packageDependencies for comparing
        */
-      const sortObject = obj => {
+      const sortObject = (obj) => {
         return Object.keys(obj)
           .sort()
-          .reduce(function(result, key) {
+          .reduce(function (result, key) {
             result[key] = obj[key];
             return result;
           }, {});
@@ -619,8 +627,23 @@ export default class Consumer {
         status.newlyCreated = true;
         return status;
       }
+      if (componentFromFileSystem.componentMap.origin === COMPONENT_ORIGINS.NESTED) {
+        status.nested = true;
+        return status;
+      }
       status.staged = componentFromModel.isLocallyChanged();
       const versionFromFs = componentFromFileSystem.id.version;
+      if (!status.staged && !componentFromFileSystem.id.hasVersion()) {
+        throw new Error(
+          `component ${id} has an invalid state.
+           1) it has a model instance so it's not new.
+           2) it's not in staged state.
+           3) it doesn't have a version in the bitmap file.
+           Maybe the component was interrupted during the export and as a result the bitmap file wasn't updated with the new version
+           `
+        );
+      }
+
       const latestVersionFromModel = componentFromModel.latest();
       // Consider the following two scenarios:
       // 1) a user tagged v1, exported, then tagged v2.
@@ -630,6 +653,7 @@ export default class Consumer {
       //    @see reduce-path.e2e 'importing v1 of a component when a component has v2' to reproduce this case.
       const version = status.staged ? latestVersionFromModel : versionFromFs;
       const versionRef = componentFromModel.versions[version];
+      if (!versionRef) throw new Error(`version ${version} was not found in ${id}`);
       const versionFromModel = await this.scope.getObject(versionRef.hash);
       status.modified = await this.isComponentModified(versionFromModel, componentFromFileSystem);
       return status;
@@ -655,7 +679,7 @@ export default class Consumer {
     // Run over the components to check if there is missing dependencies
     // If there is at least one we won't commit anything
     if (!ignoreMissingDependencies) {
-      const componentsWithMissingDeps = components.filter(component => {
+      const componentsWithMissingDeps = components.filter((component) => {
         return Boolean(component.missingDependencies);
       });
       if (!R.isEmpty(componentsWithMissingDeps)) throw new MissingDependencies(componentsWithMissingDeps);
@@ -747,14 +771,14 @@ export default class Consumer {
   static ensure(projectPath: PathOsBased = process.cwd(), noGit: boolean = false): Promise<Consumer> {
     const gitDirPath = path.join(projectPath, DOT_GIT_DIR);
     let resolvedScopePath = path.join(projectPath, BIT_HIDDEN_DIR);
-    let addedGitHooks;
+    // let addedGitHooks;
     let existingGitHooks;
-    if (!noGit && fs.existsSync(gitDirPath)) {
+    if (!noGit && fs.existsSync(gitDirPath) && !fs.existsSync(resolvedScopePath)) {
       resolvedScopePath = path.join(gitDirPath, BIT_GIT_DIR);
-      const gitHooksManager = GitHooksManager.init(gitDirPath);
-      const writeHooksResult = gitHooksManager.writeAllHooks();
-      addedGitHooks = writeHooksResult.added;
-      existingGitHooks = writeHooksResult.alreadyExist;
+      // const gitHooksManager = GitHooksManager.init(gitDirPath);
+      // const writeHooksResult = gitHooksManager.writeAllHooks();
+      // addedGitHooks = writeHooksResult.added;
+      // existingGitHooks = writeHooksResult.alreadyExist;
     }
     const scopeP = Scope.ensure(resolvedScopePath);
     const bitJsonP = ConsumerBitJson.ensure(projectPath);
@@ -767,7 +791,7 @@ export default class Consumer {
         scope,
         bitJson,
         bitMap,
-        addedGitHooks,
+        // addedGitHooks,
         existingGitHooks
       });
     });
@@ -820,7 +844,7 @@ export default class Consumer {
     const remotes = await this.scope.remotes();
     const context = {};
     enrichContextFromGlobal(context);
-    const deprecateP = Object.keys(groupedBitsByScope).map(async scopeName => {
+    const deprecateP = Object.keys(groupedBitsByScope).map(async (scopeName) => {
       const resolvedRemote = await remotes.resolve(scopeName, this.scope);
       const deprecateResult = await resolvedRemote.deprecateMany(groupedBitsByScope[scopeName], context);
       return deprecateResult;
@@ -846,7 +870,7 @@ export default class Consumer {
    */
   async remove(ids: string[], force: boolean, track: boolean, deleteFiles: boolean) {
     // added this to remove support for remove version
-    const bitIds = ids.map(bitId => BitId.parse(bitId)).map(id => {
+    const bitIds = ids.map(bitId => BitId.parse(bitId)).map((id) => {
       id.version = LATEST_BIT_VERSION;
       return id;
     });
@@ -867,7 +891,7 @@ export default class Consumer {
     const remotes = await this.scope.remotes();
     const context = {};
     enrichContextFromGlobal(context);
-    const removeP = Object.keys(groupedBitsByScope).map(async key => {
+    const removeP = Object.keys(groupedBitsByScope).map(async (key) => {
       const resolvedRemote = await remotes.resolve(key, this.scope);
       return resolvedRemote.deleteMany(groupedBitsByScope[key], force, context);
     });
@@ -881,7 +905,7 @@ export default class Consumer {
    */
   async removeComponentFromFs(bitIds: BitIds, deleteFiles: boolean) {
     return Promise.all(
-      bitIds.map(async id => {
+      bitIds.map(async (id) => {
         const component = id.isLocal()
           ? this.bitMap.getComponent(this.bitMap.getExistingComponentId(id.toStringWithoutVersion()))
           : this.bitMap.getComponent(id);
@@ -906,7 +930,7 @@ export default class Consumer {
    * @param {BitIds} bitIds - list of remote component ids to delete
    */
   resolveLocalComponentIds(bitIds: BitIds) {
-    return bitIds.map(id => {
+    return bitIds.map((id) => {
       const realName = this.bitMap.getExistingComponentId(id.toStringWithoutVersion());
       if (!realName) return id;
       const component = this.bitMap.getComponent(realName);
@@ -950,7 +974,7 @@ export default class Consumer {
     if (R.isEmpty(resolvedIDs)) return new RemovedLocalObjects({});
     if (!force) {
       await Promise.all(
-        resolvedIDs.map(async id => {
+        resolvedIDs.map(async (id) => {
           const componentStatus = await this.getComponentStatusById(id);
           if (componentStatus.modified) modifiedComponents.push(id);
           else regularComponents.push(id);
@@ -977,13 +1001,13 @@ export default class Consumer {
       );
       await this.cleanBitMapAndBitJson(componensToRemoveFromFs, removedDependencies);
     }
-    return new RemovedLocalObjects({
+    return new RemovedLocalObjects(
       removedComponentIds,
       missingComponents,
       modifiedComponents,
       dependentBits,
       removedDependencies
-    });
+    );
   }
 
   async addRemoteAndLocalVersionsToDependencies(component: Component, loadedFromFileSystem: boolean) {
@@ -1005,77 +1029,12 @@ export default class Consumer {
     await component.devDependencies.addRemoteAndLocalVersions(this.scope, modelDevDependencies);
   }
 
-  async _installPackages(dirs: string[], verbose: boolean, installRootPackageJson: boolean = false) {
-    const packageManager = this.bitJson.packageManager;
-    const packageManagerArgs = this.bitJson.packageManagerArgs;
-    const packageManagerProcessOptions = this.bitJson.packageManagerProcessOptions;
-    const useWorkspaces = this.bitJson.useWorkspaces;
-
-    loader.start(BEFORE_INSTALL_NPM_DEPENDENCIES);
-
-    // don't pass the packages to npmClient.install function.
-    // otherwise, it'll try to npm install the packages in one line 'npm install packageA packageB' and when
-    // there are mix of public and private packages it fails with 404 error.
-    // passing an empty array, results in installing packages from the package.json file
-    let results = await npmClient.install({
-      modules: [],
-      packageManager,
-      packageManagerArgs,
-      packageManagerProcessOptions,
-      useWorkspaces,
-      dirs,
-      rootDir: this.getPath(),
-      installRootPackageJson,
-      verbose
-    });
-
-    loader.stop();
-    if (!Array.isArray(results)) {
-      results = [results];
-    }
-    results.forEach(result => {
-      if (result) npmClient.printResults(result);
-    });
-  }
-
-  async installNpmPackagesForComponents(
-    componentsWithDependencies: ComponentWithDependencies[],
-    verbose: boolean = false
-  ): Promise<*> {
-    // if dependencies are installed as bit-components, go to each one of the dependencies and install npm packages
-    // otherwise, if the dependencies are installed as npm packages, npm already takes care of that
-    const componentsWithDependenciesFlatten = R.flatten(
-      componentsWithDependencies.map(oneComponentWithDependencies => {
-        return oneComponentWithDependencies.component.dependenciesSavedAsComponents
-          ? [oneComponentWithDependencies.component, ...oneComponentWithDependencies.dependencies]
-          : [oneComponentWithDependencies.component];
-      })
-    );
-
-    const componentDirs = componentsWithDependenciesFlatten.map(component => component.writtenPath);
-    return this._installPackages(componentDirs, verbose);
-  }
-
-  /**
-   * does the following (the order is important):
-   * 1) install npm packages of the consumer root.
-   * 2) install npm packages of all imported and nested components
-   * 3) link all components
-   */
-  async install(verbose) {
-    const candidateComponents = this.bitMap.getAllComponents([COMPONENT_ORIGINS.IMPORTED, COMPONENT_ORIGINS.NESTED]);
-    const dirs = Object.keys(candidateComponents)
-      .map(id => candidateComponents[id].rootDir || null)
-      .filter(dir => dir);
-    await this._installPackages(dirs, verbose, true);
-    return linkAllToNodeModules(this);
-  }
-
-  async eject(componentsIds) {
-    const componentIdsWithoutScope = componentsIds.map(id => id.toStringWithoutScope());
-    await this.remove(componentIdsWithoutScope, true, false, true);
+  async eject(componentsIds: BitId[]) {
     await packageJson.addComponentsWithVersionToRoot(this, componentsIds);
-    await this._installPackages([], true, true);
+    const componentIdsWithoutScope = componentsIds.map(id => id.toStringWithoutScope());
+    await packageJson.removeComponentsFromNodeModules(this, componentsIds);
+    await installPackages(this, [], true, true);
+    await this.remove(componentIdsWithoutScope, true, false, true);
     return componentsIds;
   }
 }

@@ -5,8 +5,7 @@ import Component from '../../../consumer/component';
 import { BitId } from '../../../bit-id';
 import { COMPONENT_ORIGINS } from '../../../constants';
 import loader from '../../../cli/loader';
-import ComponentsList from '../../../consumer/component/components-list';
-import { BEFORE_LOADING_COMPONENTS, BEFORE_IMPORT_ENVIRONMENT } from '../../../cli/loader/loader-messages';
+import { BEFORE_LOADING_COMPONENTS } from '../../../cli/loader/loader-messages';
 
 export async function build(id: string, verbose: boolean): Promise<?Array<string>> {
   const bitId = BitId.parse(id);
@@ -14,7 +13,7 @@ export async function build(id: string, verbose: boolean): Promise<?Array<string
   const component: Component = await consumer.loadComponent(bitId);
   const result = await component.build({ scope: consumer.scope, consumer, verbose });
   if (result === null) return null;
-  const distFilePaths = await component.writeDists(consumer);
+  const distFilePaths = await component.dists.writeDists(component, consumer);
   consumer.bitMap.addMainDistFileToComponent(component.id, distFilePaths);
   await consumer.bitMap.write();
   // await consumer.driver.runHook('onBuild', [component]);

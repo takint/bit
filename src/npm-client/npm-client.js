@@ -19,18 +19,37 @@ const defaultPackageManagerArgs = {
 const defaultPackageManagerProcessOptions = {
   cwd: process.cwd
 };
+const warningPrefix = (packageManager: string): string => {
+  return packageManager === 'npm' ? 'npm WARN' : 'warning';
+};
+const errorPrefix = (packageManager: string): string => {
+  return packageManager === 'npm' ? 'npm ERR!' : 'error';
+};
+const peerDependenciesMissing = (packageManager: string): string => {
+  return packageManager === 'npm' ? 'requires a peer' : 'unmet peer';
+};
 
-const stripNonNpmErrors = (errors: string) => {
+const stripNonNpmErrors = (errors: string, packageManager: string) => {
   // a workaround to remove all 'npm warn' and 'npm notice'.
   // NPM itself returns them even when --loglevel = error or when --silent/--quiet flags are set
+  const prefix = errorPrefix(packageManager);
   return errors
     .split('\n')
-    .filter(error => error.startsWith('npm ERR!') || error.startsWith('error'))
+    .filter(error => error.startsWith(prefix))
+    .join('\n');
+};
+
+const stripNonPeerDependenciesWarnings = (errors: string, packageManager: string) => {
+  const prefix = warningPrefix(packageManager);
+  const peer = peerDependenciesMissing(packageManager);
+  return errors
+    .split('\n')
+    .filter(error => error.startsWith(prefix) && error.includes(peer))
     .join('\n');
 };
 
 /**
- * Pick only allowed to be overriden options
+ * Pick only allowed to be overridden options
  * @param {Object} userOptions
  */
 const getAllowdPackageManagerProcessOptions = (userOptions) => {
@@ -102,18 +121,22 @@ const _installInOneDirectory = ({
     concretePackageManagerProcessOptions
   );
 
+  // Remove the install from args since it's always there
+  const printArgs = concretePackageManagerArgs.filter(arg => arg !== 'install');
+  const argsString = printArgs && printArgs.length > 0 ? `with args: ${printArgs}` : '';
+
   return childProcess
     .then(({ stdout, stderr }) => {
-      // Remove the install from args since it's always there
-      const printArgs = concretePackageManagerArgs.filter(arg => arg !== 'install');
-      const argsString = printArgs && printArgs.length > 0 ? `with args: ${printArgs}` : '';
-      stdout = verbose ? stdout : `successfully ran ${packageManager} install at ${cwd} ${argsString}`;
+      const successMessage = `\nsuccessfully ran ${packageManager} install at ${cwd} ${argsString}`;
+      const peerWarnings = stripNonPeerDependenciesWarnings(stderr, packageManager);
+
+      stdout = verbose ? stdout + successMessage : chalk.white(peerWarnings) + successMessage;
       stderr = verbose ? stderr : '';
       return { stdout, stderr };
     })
     .catch((err) => {
-      const stderr = verbose ? err.stderr : stripNonNpmErrors(err.stderr);
-      // return Promise.reject(`${stderr}\n\n${err.message}`);
+      let stderr = `failed running ${packageManager} install at ${cwd} ${argsString} \n`;
+      stderr += verbose ? err.stderr : stripNonNpmErrors(err.stderr, packageManager);
       return Promise.reject(`${stderr}`);
     });
 };

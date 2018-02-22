@@ -18,6 +18,7 @@ const fields = [
   'devDependencies',
   'packages',
   'devPackages',
+  'peerDependencies',
   'files',
   'specs',
   'deprecated'
@@ -56,6 +57,7 @@ function convertObjectToPrintable(component: ConsumerComponent, isFromFs) {
     devDependencies,
     packageDependencies,
     devPackageDependencies,
+    peerPackageDependencies,
     files,
     mainFile,
     deprecated,
@@ -69,6 +71,7 @@ function convertObjectToPrintable(component: ConsumerComponent, isFromFs) {
   obj.mainFile = mainFile ? normalize(mainFile) : null;
   obj.dependencies = dependencies.toStringOfIds().concat(parsePackages(packageDependencies));
   obj.devDependencies = devDependencies.toStringOfIds().concat(parsePackages(devPackageDependencies));
+  obj.peerDependencies = parsePackages(peerPackageDependencies);
 
   obj.files =
     !R.isEmpty(files) && !R.isNil(files)
@@ -127,9 +130,9 @@ function generateDependenciesTable(component: ConsumerComponent, showRemoteVersi
       dependencyId = isDev ? `${dependencyId} (dev)` : dependencyId;
       const row = [dependencyId];
       if (showRemoteVersion) {
-        const dependencyVersion = parseInt(dependency.currentVersion);
-        const localVersion = parseInt(dependency.localVersion);
-        const remoteVersion = dependency.remoteVersion ? parseInt(dependency.remoteVersion) : null;
+        const dependencyVersion = dependency.currentVersion;
+        const localVersion = dependency.localVersion;
+        const remoteVersion = dependency.remoteVersion ? dependency.remoteVersion : null;
         // if all versions are equal, paint them with green. Otherwise, paint with red
         const color =
           (remoteVersion && remoteVersion === localVersion && remoteVersion === dependencyVersion) ||

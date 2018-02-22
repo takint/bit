@@ -1,5 +1,6 @@
 /** @flow */
 import path from 'path';
+import fs from 'fs-extra';
 import R from 'ramda';
 import { COMPONENT_ORIGINS } from '../../constants';
 import ComponentMap from '../bit-map/component-map';
@@ -114,7 +115,7 @@ function findComponentsOfDepsFiles(
 Try to run "bit import ${componentId} --objects" to get the component saved in the model`);
         }
         const componentBitId = BitId.parse(componentId);
-        const dependency = componentFromModel.component
+        const dependency = componentFromModel
           .getAllDependencies()
           .find(dep => dep.id.toStringWithoutVersion() === componentBitId.toStringWithoutVersion());
         if (!dependency) {
@@ -325,6 +326,49 @@ Try to run "bit import ${componentId} --objects" to get the component saved in t
   return { componentsDeps, devComponentsDeps, packagesDeps, devPackagesDeps, untrackedDeps, relativeDeps, missingDeps };
 }
 
+// @todo: move to bit-javascript
+/**
+ * For author, the peer-dependencies are set in the root package.json
+ * For imported components, we don't want to change the peerDependencies of the author, unless
+ * we're certain the user intent to do so. Therefore, we ignore the root package.json and look for
+ * the package.json in the component's directory.
+ */
+function findPeerDependencies(consumerPath: string, component: Component): Object {
+  const componentMap = component.componentMap;
+  const getPeerDependencies = (): Object => {
+    const componentRoot = componentMap.origin === COMPONENT_ORIGINS.AUTHORED ? consumerPath : componentMap.rootDir;
+    const packageJsonLocation = path.join(componentRoot, 'package.json');
+    if (fs.existsSync(packageJsonLocation)) {
+      try {
+        const packageJson = fs.readJsonSync(packageJsonLocation);
+        if (packageJson.peerDependencies) return packageJson.peerDependencies;
+      } catch (err) {
+        logger.error(
+          `Failed reading the project package.json at ${packageJsonLocation}. Error Message: ${err.message}`
+        );
+      }
+    }
+    if (component.componentFromModel && componentMap.origin !== COMPONENT_ORIGINS.AUTHORED) {
+      return component.componentFromModel.peerPackageDependencies;
+    }
+    return {};
+  };
+  const projectPeerDependencies = getPeerDependencies();
+  const peerPackages = {};
+  if (R.isEmpty(projectPeerDependencies)) return {};
+  // check whether the peer-dependencies was actually require in the code. if so, remove it from
+  // the packages/dev-packages and add it as a peer-package.
+  Object.keys(projectPeerDependencies).forEach((pkg) => {
+    ['packageDependencies', 'devPackageDependencies'].forEach((field) => {
+      if (Object.keys(component[field]).includes(pkg)) {
+        delete component[field][pkg];
+        peerPackages[pkg] = projectPeerDependencies[pkg];
+      }
+    });
+  });
+  return peerPackages;
+}
+
 /**
  * Merge the dependencies-trees we got from all files to one big dependency-tree
  * @param {Array<Object>} depTrees
@@ -370,14 +414,14 @@ Try to run "bit import ${componentId} --objects" to get the component saved in t
  */
 export default (async function loadDependenciesForComponent(
   component: Component,
-  componentMap: ComponentMap,
   bitDir: string,
   consumer: Consumer,
-  idWithConcreteVersionString: string,
-  componentFromModel: Component
+  idWithConcreteVersionString: string
 ): Promise<Component> {
   const driver: Driver = consumer.driver;
   const consumerPath = consumer.getPath();
+  const componentMap: ComponentMap = component.componentMap;
+  const componentFromModel: Component = component.componentFromModel;
   const missingDependencies = {};
   const { allFiles, testsFiles } = componentMap.getFilesGroupedByBeingTests();
   const getDependenciesTree = async () => {
@@ -435,6 +479,7 @@ export default (async function loadDependenciesForComponent(
   if (!R.isEmpty(untrackedDependencies)) missingDependencies.untrackedDependencies = untrackedDependencies;
   component.packageDependencies = traversedDeps.packagesDeps;
   component.devPackageDependencies = traversedDeps.devPackagesDeps;
+  component.peerPackageDependencies = findPeerDependencies(consumerPath, component);
   if (!R.isEmpty(traversedDeps.relativeDeps)) {
     missingDependencies.relativeComponents = traversedDeps.relativeDeps;
   }
