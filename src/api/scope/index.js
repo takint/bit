@@ -15,6 +15,7 @@ import catScope from './lib/cat-scope';
 import refreshScope from './lib/refresh-scope';
 import remove from './lib/delete';
 import deprecate from './lib/deprecate';
+import validate from './lib/validate';
 import latestVersions from './lib/latest-versions';
 
 export {
@@ -32,6 +33,7 @@ export {
   ciUpdateAction,
   scopeConfig,
   catScope,
+  validate,
   refreshScope,
   remove,
   deprecate,

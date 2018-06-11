@@ -286,6 +286,10 @@ export default class Component extends BitObject {
       if (!content) throw new GeneralError(`failed loading file ${file.relativePath} from the model`);
       return new ClassName({ base: '.', path: file.relativePath, contents: content.contents, test: file.test });
     };
+    if (version == null) {
+      // TODO - if version is not loaded then I return null but every consumer of this api need to concider this change
+      return null;
+    }
     const filesP = version.files ? Promise.all(version.files.map(loadFileInstance(SourceFile))) : null;
     const distsP = version.dists ? Promise.all(version.dists.map(loadFileInstance(Dist))) : null;
     const scopeMetaP = scopeName ? ScopeMeta.fromScopeName(scopeName).load(repository) : Promise.resolve();

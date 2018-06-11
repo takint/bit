@@ -18,6 +18,7 @@ import Search from './commands/public-cmds/search-cmd';
 import Test from './commands/public-cmds/test-cmd';
 import Show from './commands/public-cmds/show-cmd';
 import DependencyStatus from './commands/private-cmds/dependency-status-cmd';
+import Validate from './commands/private-cmds/validate-cmd';
 import Status from './commands/public-cmds/status-cmd';
 import CatObject from './commands/private-cmds/cat-object-cmd';
 import CatComponent from './commands/private-cmds/cat-component-cmd';
@@ -83,6 +84,7 @@ export default function registerCommands(extensionsCommands): CommandRegistrar {
       new ScopeConfig(),
       new Link(),
       new DependencyStatus(),
+      new Validate(),
       new Add(),
       new Untrack(),
       new Untag(),
