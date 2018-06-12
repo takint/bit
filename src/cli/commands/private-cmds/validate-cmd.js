@@ -19,7 +19,7 @@ export default class Validate extends Command {
       const output = chalk.green('Scop is valid');
       return output;
     }
-    let output = chalk.red('The following errors exist in scope:\n');
+    let output = '';
     const errorMsgs = validateResult.validationErrors.map((validationError) => {
       const errorMsg = chalk.bold(validationError);
       return errorMsg;
