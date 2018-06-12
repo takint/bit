@@ -5,14 +5,14 @@ import { validate } from '../../../api/scope';
 import type { ValidateResult } from '../../../scope/component-ops/validate';
 
 export default class Validate extends Command {
-  name = 'validate';
+  name = 'validate [path]';
   private = true;
   description = 'returns all the validation errors on a specific scope';
   alias = '';
   opts = [];
 
-  action(): Promise<ValidateResult> {
-    return validate();
+  action([path]: [string]): Promise<ValidateResult> {
+    return validate(path);
   }
   report(validateResult: ValidateResult): string {
     if (validateResult.validationErrors.length === 0) {
