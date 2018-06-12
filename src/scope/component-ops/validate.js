@@ -26,7 +26,7 @@ export default (async function getValidations(scope: Scope): Promise<ValidateRes
               return;
             }
           } catch (ex) {
-            const errMsg = `${scope.name}, ${component.id()}, ${ex.toString()}`;
+            const errMsg = `${scope.name}, ${component.id()}, ${version}, ${ex.toString()}`;
             errMsgs.push(errMsg);
           }
         })
