@@ -83,15 +83,16 @@ const _installInOneDirectory = ({
   packageManagerArgs = [],
   packageManagerProcessOptions = {},
   dir,
-  verbose = false
+  verbose = false,
+  writeToPath
 }): Promise<PackageManagerResults> => {
   // Handle process options
   const allowedPackageManagerProcessOptions = getAllowdPackageManagerProcessOptions(packageManagerProcessOptions);
   const concretePackageManagerProcessOptions = merge(
     defaultPackageManagerProcessOptions,
-    allowedPackageManagerProcessOptions
+    allowedPackageManagerProcessOptions,
   );
-  concretePackageManagerProcessOptions.cwd = dir || concretePackageManagerProcessOptions.cwd;
+  concretePackageManagerProcessOptions.cwd = writeToPath || dir || concretePackageManagerProcessOptions.cwd;
   const cwd = concretePackageManagerProcessOptions.cwd;
 
   // taking care of object case
@@ -111,7 +112,7 @@ const _installInOneDirectory = ({
     // concretePackageManagerArgs.push('--verbose');
   }
 
-  fs.ensureDirSync(path.join(cwd, 'node_modules'));
+  fs.ensureDirSync(path.join(writeToPath || cwd, 'node_modules'));
   logger.debug(
     `installing npm packages using ${packageManager} at ${cwd} with options:`,
     concretePackageManagerProcessOptions,
@@ -197,7 +198,8 @@ const _installInOneDirectoryWithPeerOption = async ({
   packageManagerProcessOptions = {},
   dir,
   installPeerDependencies = false,
-  verbose = false
+  verbose = false,
+  writeToPath
 }): Promise<PackageManagerResults | PackageManagerResults[]> => {
   const rootDirResults = await _installInOneDirectory({
     modules,
@@ -206,7 +208,8 @@ const _installInOneDirectoryWithPeerOption = async ({
     packageManagerProcessOptions,
     dir,
     installPeerDependencies,
-    verbose
+    verbose,
+    writeToPath
   });
 
   if (installPeerDependencies) {
@@ -217,7 +220,8 @@ const _installInOneDirectoryWithPeerOption = async ({
       packageManagerArgs,
       packageManagerProcessOptions,
       dir,
-      verbose
+      verbose,
+      writeToPath
     });
     return [rootDirResults, peerResults];
   }
@@ -237,7 +241,8 @@ const installAction = async ({
   rootDir,
   installRootPackageJson = false,
   installPeerDependencies = false,
-  verbose = false
+  verbose = false,
+  writeToPath
 }: installArgs): Promise<PackageManagerResults | PackageManagerResults[]> => {
   if (useWorkspaces && packageManager === 'yarn') {
     await _installInOneDirectoryWithPeerOption({
@@ -247,7 +252,8 @@ const installAction = async ({
       packageManagerProcessOptions,
       dir: rootDir,
       installPeerDependencies,
-      verbose
+      verbose,
+      writeToPath
     });
   }
 
@@ -261,7 +267,8 @@ const installAction = async ({
       packageManagerProcessOptions,
       dir: rootDir,
       installPeerDependencies,
-      verbose
+      verbose,
+      writeToPath
     });
     if (Array.isArray(rootDirResults)) {
       results.concat(rootDirResults);
@@ -278,7 +285,8 @@ const installAction = async ({
       packageManagerProcessOptions,
       dir,
       installPeerDependencies,
-      verbose
+      verbose,
+      writeToPath
     })
   );
 

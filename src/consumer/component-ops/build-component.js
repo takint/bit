@@ -27,7 +27,8 @@ export default (async function buildComponent({
   consumer,
   noCache,
   verbose,
-  keep
+  keep,
+  isolatedComponentFolder
 }: {
   component: ConsumerComponent,
   scope: Scope,
@@ -35,7 +36,8 @@ export default (async function buildComponent({
   consumer?: Consumer,
   noCache?: boolean,
   verbose?: boolean,
-  keep?: boolean
+  keep?: boolean,
+  isolatedComponentFolder?: string
 }): Promise<?Dists> {
   logger.debug(`consumer-component.build ${component.id.toString()}`);
   // @TODO - write SourceMap Type
@@ -54,8 +56,8 @@ export default (async function buildComponent({
   const bitMap = consumer ? consumer.bitMap : undefined;
   const consumerPath = consumer ? consumer.getPath() : '';
   const componentMap = bitMap && bitMap.getComponentIfExist(component.id);
-  let componentDir = consumerPath;
-  if (componentMap) {
+  let componentDir = isolatedComponentFolder || consumerPath;
+  if (componentMap && !isolatedComponentFolder) {
     componentDir = consumerPath && componentMap.rootDir ? path.join(consumerPath, componentMap.rootDir) : undefined;
   }
   const needToRebuild = await _isNeededToReBuild(consumer, component.id, noCache);
@@ -79,7 +81,8 @@ export default (async function buildComponent({
       componentMap,
       scope,
       keep,
-      verbose: !!verbose
+      verbose: !!verbose,
+      isolatedComponentFolder
     })) || [];
   // return buildFilesP.then((buildedFiles) => {
   builtFiles.forEach((file) => {
@@ -102,7 +105,8 @@ async function _buildIfNeeded({
   scope,
   verbose,
   directory,
-  keep
+  keep,
+  isolatedComponentFolder
 }: {
   component: ConsumerComponent,
   consumer?: Consumer,
@@ -110,7 +114,8 @@ async function _buildIfNeeded({
   scope: Scope,
   verbose: boolean,
   directory?: ?string,
-  keep: ?boolean
+  keep: ?boolean,
+  isolatedComponentFolder?: string
 }): Promise<Vinyl[]> {
   const compiler = component.compiler;
 
@@ -122,7 +127,7 @@ async function _buildIfNeeded({
     throw new InvalidCompilerInterface(compiler.name);
   }
 
-  if (consumer) return _runBuild({ component, componentRoot: consumer.getPath(), consumer, componentMap, verbose });
+  // if (consumer) return _runBuild({ component, componentRoot: consumer.getPath(), consumer, componentMap, verbose });
   if (component.isolatedEnvironment) {
     return _runBuild({ component, componentRoot: component.writtenPath, consumer, componentMap, verbose });
   }
@@ -133,9 +138,11 @@ async function _buildIfNeeded({
     const isolateOpts = {
       verbose,
       installPackages: true,
-      noPackageJson: false
+      noPackageJson: false,
+      writeToPath: isolatedComponentFolder,
+      consumer
     };
-    const componentWithDependencies = await isolatedEnvironment.isolateComponent(component.id, isolateOpts);
+    const componentWithDependencies = await isolatedEnvironment.isolateComponent(component.id, isolateOpts, component);
     const isolatedComponent = componentWithDependencies.component;
     const result = await _runBuild({
       component,

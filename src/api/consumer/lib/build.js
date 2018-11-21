@@ -20,6 +20,7 @@ export async function build(id: string, noCache: boolean, verbose: boolean): Pro
 }
 
 export async function buildAll(noCache: boolean, verbose: boolean): Promise<Object> {
+  const isolatedComponentFolder = '/tmp/my-cool-environment';
   const consumer: Consumer = await loadConsumer();
   const authoredAndImportedIds = consumer.bitMap.getAllBitIds([COMPONENT_ORIGINS.IMPORTED, COMPONENT_ORIGINS.AUTHORED]);
   if (R.isEmpty(authoredAndImportedIds)) throw new GeneralError('nothing to build');
@@ -27,7 +28,7 @@ export async function buildAll(noCache: boolean, verbose: boolean): Promise<Obje
   loader.start(BEFORE_LOADING_COMPONENTS);
   const { components } = await consumer.loadComponents(authoredAndImportedIds);
   loader.stop();
-  const buildAllP = await consumer.scope.buildMultiple(components, consumer, noCache, verbose);
+  const buildAllP = await consumer.scope.buildMultiple(components, consumer, noCache, verbose, isolatedComponentFolder);
   const allComponents = await Promise.all(buildAllP);
   const componentsObj = {};
   allComponents.forEach((component) => {

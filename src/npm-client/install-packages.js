@@ -12,7 +12,8 @@ export async function installPackages(
   verbose: boolean, // true shows all messages, false shows only a successful message
   installRootPackageJson: boolean = false,
   silentPackageManagerResult: boolean = false, // don't shows packageManager results at all
-  installPeerDependencies: boolean = false // also install peer dependencies
+  installPeerDependencies: boolean = false, // also install peer dependencies
+  writeToPath: string,
 ) {
   const packageManager = consumer.bitJson.packageManager;
   const packageManagerArgs = consumer.packageManagerArgs.length
@@ -37,7 +38,8 @@ export async function installPackages(
     rootDir: consumer.getPath(),
     installRootPackageJson,
     installPeerDependencies,
-    verbose
+    verbose,
+    writeToPath
   });
 
   loader.stop();
@@ -57,7 +59,8 @@ export async function installNpmPackagesForComponents(
   componentsWithDependencies: ComponentWithDependencies[],
   verbose: boolean = false,
   silentPackageManagerResult: boolean = false,
-  installPeerDependencies: boolean = false
+  installPeerDependencies: boolean = false,
+  writeToPath: ?string
 ): Promise<*> {
   // if dependencies are installed as bit-components, go to each one of the dependencies and install npm packages
   // otherwise, if the dependencies are installed as npm packages, npm already takes care of that
@@ -70,5 +73,5 @@ export async function installNpmPackagesForComponents(
   );
 
   const componentDirs = componentsWithDependenciesFlatten.map(component => component.writtenPath);
-  return installPackages(consumer, componentDirs, verbose, false, silentPackageManagerResult, installPeerDependencies);
+  return installPackages(consumer, componentDirs, verbose, false, silentPackageManagerResult, installPeerDependencies, writeToPath);
 }

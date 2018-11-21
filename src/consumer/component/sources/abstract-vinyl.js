@@ -27,7 +27,8 @@ export default class AbstractVinyl extends Vinyl {
   }
 
   async write(writePath?: string, force?: boolean = true, verbose: boolean = false): Promise<?string> {
-    const filePath = writePath || this.path;
+    // const filePath = writePath || this.path;
+    const filePath = writePath ? path.join(writePath, this.relative) : this.path // TODO: is this okay?
     const msg = _verboseMsg(filePath, force);
     if (verbose) {
       console.log(msg); // eslint-disable-line no-console

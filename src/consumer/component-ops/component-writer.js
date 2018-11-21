@@ -56,7 +56,8 @@ export default class ComponentWriter {
     writeBitDependencies = false,
     deleteBitDirContent,
     existingComponentMap,
-    excludeRegistryPrefix = false
+    excludeRegistryPrefix = false,
+    isIsolated
   }: ComponentWriterProps) {
     this.component = component;
     this.writeToPath = writeToPath;
@@ -71,6 +72,7 @@ export default class ComponentWriter {
     this.deleteBitDirContent = deleteBitDirContent;
     this.existingComponentMap = existingComponentMap;
     this.excludeRegistryPrefix = excludeRegistryPrefix;
+    this.isIsolated = isIsolated
   }
 
   static getInstance(componentWriterProps: ComponentWriterProps): ComponentWriter {
@@ -96,7 +98,7 @@ export default class ComponentWriter {
     this._determineWhetherToDeleteComponentDirContent();
     await this._handlePreviouslyNestedCurrentlyImportedCase();
     this._determineWhetherToWriteConfig();
-    this._updateComponentRootPathAccordingToBitMap();
+    if (!this.isIsolated) this._updateComponentRootPathAccordingToBitMap();
     this._updateBitMapIfNeeded();
     this._determineWhetherToWritePackageJson();
     await this._writeToComponentDir();
@@ -212,7 +214,9 @@ export default class ComponentWriter {
    * by the root package.json
    */
   _determineWhetherToWritePackageJson() {
-    this.writePackageJson = this.writePackageJson && this.origin !== COMPONENT_ORIGINS.AUTHORED;
+    this.writePackageJson = this.isIsolated
+      ? true
+      : this.writePackageJson && this.origin !== COMPONENT_ORIGINS.AUTHORED;
   }
 
   /**

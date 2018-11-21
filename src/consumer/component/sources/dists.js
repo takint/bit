@@ -138,14 +138,14 @@ export default class Dists {
    * write dists file to the filesystem. In case there is a consumer and dist.entry should be stripped, it will be
    * done before writing the files. The originallySharedDir should be already stripped before accessing this method.
    */
-  async writeDists(component: Component, consumer?: Consumer, writeLinks?: boolean = true): Promise<?(string[])> {
+  async writeDists(component: Component, consumer?: Consumer, writeLinks?: boolean = true, isolatedComponentFolder?: string): Promise<?(string[])> {
     if (this.isEmpty() || !this.writeDistsFiles) return null;
     let componentMap;
     if (consumer) {
       componentMap = consumer.bitMap.getComponent(component.id, { ignoreVersion: true });
       this.updateDistsPerConsumerBitJson(component.id, consumer, componentMap);
     }
-    const saveDist = this.dists.map(distFile => distFile.write());
+    const saveDist = this.dists.map(distFile => distFile.write(isolatedComponentFolder));
     if (writeLinks && componentMap && componentMap.origin === COMPONENT_ORIGINS.IMPORTED) {
       await writeLinksInDist(component, componentMap, consumer);
     }

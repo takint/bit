@@ -299,7 +299,8 @@ export default class Scope {
     components: Component[],
     consumer: Consumer,
     noCache: boolean,
-    verbose: boolean
+    verbose: boolean,
+    isolatedComponentFolder: ?string,
   ): Promise<{ component: string, buildResults: Object }> {
     logger.debugAndAddBreadCrumb('scope.buildMultiple', 'scope.buildMultiple: sequentially build multiple components');
     // Make sure to not start the loader if there are no components to build
@@ -307,8 +308,8 @@ export default class Scope {
       loader.start(BEFORE_RUNNING_BUILD);
     }
     const build = async (component: Component) => {
-      await component.build({ scope: this, consumer, noCache, verbose });
-      const buildResults = await component.dists.writeDists(component, consumer);
+      await component.build({ scope: this, consumer, noCache, verbose, isolatedComponentFolder });
+      const buildResults = await component.dists.writeDists(component, consumer, true, isolatedComponentFolder);
       return { component: component.id.toString(), buildResults };
     };
     return pMapSeries(components, build);

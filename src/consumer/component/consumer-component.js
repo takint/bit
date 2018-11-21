@@ -531,7 +531,8 @@ export default class Component {
     consumer,
     noCache,
     verbose,
-    keep
+    keep,
+    isolatedComponentFolder
   }: {
     scope: Scope,
     save?: boolean,
@@ -547,7 +548,9 @@ export default class Component {
       consumer,
       noCache,
       verbose,
-      keep
+      keep,
+      isolatedComponentFolder,
+      consumer
     });
   }
 
@@ -718,14 +721,7 @@ export default class Component {
       return this.specsResults;
     };
 
-    if (!isolated && consumer) {
-      logger.debug('Building the component before running the tests');
-      await this.build({ scope, verbose, consumer });
-      await this.dists.writeDists(this, consumer);
-      return run(this, consumer.getPath());
-    }
-
-    const isolatedEnvironment = new IsolatedEnvironment(scope, directory);
+    const isolatedEnvironment = new IsolatedEnvironment(scope, directory); // TODO: give proper directory
 
     try {
       await isolatedEnvironment.create();
@@ -734,7 +730,9 @@ export default class Component {
         dist: true,
         installPackages: true,
         installPeerDependencies: true,
-        noPackageJson: false
+        noPackageJson: false,
+        isLocalComponent: !!(!isolated && consumer),
+        consumer
       };
       const localTesterPath = path.join(isolatedEnvironment.getPath(), 'tester');
 

@@ -12,6 +12,7 @@ import { Consumer } from '../consumer';
 import type { PathOsBased } from '../utils/path';
 import writeComponents from '../consumer/component-ops/write-components';
 import VersionDependencies from '../scope/version-dependencies';
+import Component from '../consumer/component/consumer-component';
 
 export type IsolateOptions = {
   writeToPath: ?string, // Path to write the component to (default to the isolatedEnv path)
@@ -55,16 +56,24 @@ export default class Environment {
    * @param {IsolateOptions} opts
    * @return {Promise.<Component>}
    */
-  async isolateComponent(bitId: BitId | string, opts: IsolateOptions): Promise<ComponentWithDependencies> {
+  async isolateComponent(bitId: BitId | string, opts: IsolateOptions, component: Component): Promise<ComponentWithDependencies> {
     // add this if statement due to extentions calling this api directly with bitId as string with version
     if (typeof bitId === 'string') {
       bitId = await BitId.parse(bitId, true);
     }
-    const componentsWithDependencies = await this.consumer.importComponents([bitId]);
+    // TODO: separate the isolateComponent method into isolateComponentFromConsumer in order to avoid all this ugliness
+    // TODO: ADD COMPONENT DEPENDENCIES
+    const componentsWithDependencies = component
+      ? [{component, allDependencies: [], dependencies: []}]
+      : await (opts.consumer || this.consumer).importComponents([bitId]);
+      // TODO: previously here I tried using Component.loadFromFileSystem but it proved very opinionated about its relationship with the scope
+      // (likely because all the logic dealing with component dependencies)
+      // the next step here should be trying again to use it here, tapping in to its logic in order to prevent it importing the current component itself from the scope
+      // (this obviously needs more investigation :) )
     const componentWithDependencies = componentsWithDependencies[0];
     const writeToPath = opts.writeToPath || this.path;
     const concreteOpts = {
-      consumer: this.consumer,
+      consumer: opts.consumer || this.consumer,
       componentsWithDependencies,
       writeToPath,
       override: opts.override,
@@ -79,10 +88,12 @@ export default class Environment {
       addToRootPackageJson: false,
       verbose: opts.verbose,
       excludeRegistryPrefix: !!opts.excludeRegistryPrefix,
-      silentPackageManagerResult: opts.silentPackageManagerResult
+      silentPackageManagerResult: opts.silentPackageManagerResult,
+      isIsolated: true
     };
     await writeComponents(concreteOpts);
     await Environment.markEnvironmentAsInstalled(writeToPath);
+    componentWithDependencies.component.writtenPath = componentWithDependencies.component.writtenPath || writeToPath // TODO: fix this
     return componentWithDependencies;
   }
 

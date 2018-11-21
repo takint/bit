@@ -68,7 +68,8 @@ export default (async function writeToComponentsDir({
   installPeerDependencies = false,
   addToRootPackageJson = true,
   verbose = false, // display the npm output
-  excludeRegistryPrefix = false
+  excludeRegistryPrefix = false,
+  isIsolated
 }: {
   consumer: Consumer,
   silentPackageManagerResult?: boolean,
@@ -121,7 +122,8 @@ export default (async function writeToComponentsDir({
         consumer,
         writeBitDependencies: writeBitDependencies || !componentWithDeps.component.dependenciesSavedAsComponents, // when dependencies are written as npm packages, they must be written in package.json
         existingComponentMap: componentMap,
-        excludeRegistryPrefix
+        excludeRegistryPrefix,
+        isIsolated
       }
     };
   });
@@ -150,7 +152,7 @@ export default (async function writeToComponentsDir({
         return Promise.resolve(null);
       }
       if (depFromBitMap && depFromBitMap.origin === COMPONENT_ORIGINS.AUTHORED) {
-        dep.writtenPath = consumer.getPath();
+        dep.writtenPath = writeToPath || consumer.getPath();
         logger.debug(`writeToComponentsDir, ignore dependency ${dependencyId} as it already exists in bit map`);
         Analytics.addBreadCrumb(
           'writeToComponentsDir',
@@ -160,7 +162,7 @@ export default (async function writeToComponentsDir({
         return Promise.resolve(dep);
       }
       if (depFromBitMap && fs.existsSync(depFromBitMap.rootDir)) {
-        dep.writtenPath = depFromBitMap.rootDir;
+        dep.writtenPath = writeToPath || depFromBitMap.rootDir;
         logger.debug(
           `writeToComponentsDir, ignore dependency ${dependencyId} as it already exists in bit map and file system`
         );
@@ -179,12 +181,12 @@ export default (async function writeToComponentsDir({
           'writeToComponentsDir',
           `writeToComponentsDir, ignore dependency ${Analytics.hashData(dependencyId)} as it already exists in cache`
         );
-        dep.writtenPath = dependenciesIdsCache[dependencyId];
+        dep.writtenPath = writeToPath || dependenciesIdsCache[dependencyId];
         consumer.bitMap.addDependencyToParent(componentWithDeps.component.id, dependencyId);
         return Promise.resolve(dep);
       }
       const depRootPath = consumer.composeDependencyPath(dep.id);
-      dep.writtenPath = depRootPath;
+      dep.writtenPath = writeToPath || depRootPath;
       dependenciesIdsCache[dependencyId] = depRootPath;
       // When a component is NESTED we do interested in the exact version, because multiple components with the same scope
       // and namespace can co-exist with different versions.
@@ -207,7 +209,7 @@ export default (async function writeToComponentsDir({
   });
   const writtenDependenciesIncludesNull = await Promise.all(allDependenciesP);
   const writtenDependencies = writtenDependenciesIncludesNull.filter(dep => dep);
-  if (writeToPath) {
+  if (writeToPath && !isIsolated) {
     componentsWithDependencies.forEach((componentWithDeps) => {
       const relativeWrittenPath = consumer.getPathRelativeToConsumer(componentWithDeps.component.writtenPath);
       const absoluteWrittenPath = consumer.toAbsolutePath(relativeWrittenPath);
@@ -228,7 +230,8 @@ export default (async function writeToComponentsDir({
       componentsWithDependencies,
       verbose,
       silentPackageManagerResult,
-      installPeerDependencies
+      installPeerDependencies,
+      writeToPath || null
     );
   }
   if (addToRootPackageJson) await packageJson.addComponentsToRoot(consumer, writtenComponents.map(c => c.id));
