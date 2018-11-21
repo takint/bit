@@ -90,7 +90,7 @@ const _installInOneDirectory = ({
   const allowedPackageManagerProcessOptions = getAllowdPackageManagerProcessOptions(packageManagerProcessOptions);
   const concretePackageManagerProcessOptions = merge(
     defaultPackageManagerProcessOptions,
-    allowedPackageManagerProcessOptions,
+    allowedPackageManagerProcessOptions
   );
   concretePackageManagerProcessOptions.cwd = writeToPath || dir || concretePackageManagerProcessOptions.cwd;
   const cwd = concretePackageManagerProcessOptions.cwd;

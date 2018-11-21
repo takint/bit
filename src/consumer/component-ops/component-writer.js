@@ -72,7 +72,7 @@ export default class ComponentWriter {
     this.deleteBitDirContent = deleteBitDirContent;
     this.existingComponentMap = existingComponentMap;
     this.excludeRegistryPrefix = excludeRegistryPrefix;
-    this.isIsolated = isIsolated
+    this.isIsolated = isIsolated;
   }
 
   static getInstance(componentWriterProps: ComponentWriterProps): ComponentWriter {

@@ -13,7 +13,7 @@ export async function installPackages(
   installRootPackageJson: boolean = false,
   silentPackageManagerResult: boolean = false, // don't shows packageManager results at all
   installPeerDependencies: boolean = false, // also install peer dependencies
-  writeToPath: string,
+  writeToPath: string
 ) {
   const packageManager = consumer.bitJson.packageManager;
   const packageManagerArgs = consumer.packageManagerArgs.length
@@ -73,5 +73,13 @@ export async function installNpmPackagesForComponents(
   );
 
   const componentDirs = componentsWithDependenciesFlatten.map(component => component.writtenPath);
-  return installPackages(consumer, componentDirs, verbose, false, silentPackageManagerResult, installPeerDependencies, writeToPath);
+  return installPackages(
+    consumer,
+    componentDirs,
+    verbose,
+    false,
+    silentPackageManagerResult,
+    installPeerDependencies,
+    writeToPath
+  );
 }
