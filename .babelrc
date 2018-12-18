@@ -1,5 +1,5 @@
 {
-  "only": "*.js",
+  "only": ["**/*.js"],
   "presets": [
     [
       "@babel/preset-env",
@@ -32,7 +32,6 @@
       "@babel/plugin-transform-runtime",
       {
         "helpers": false,
-        "polyfill": false,
         "regenerator": true
       }
     ],
@@ -41,9 +40,6 @@
     ],
     [
       "@babel/plugin-proposal-class-properties"
-    ],
-    [
-      "transform-inline-imports-commonjs"
     ]
   ]
 }
